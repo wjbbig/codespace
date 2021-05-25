@@ -6,8 +6,8 @@ import (
 )
 
 const (
-	defaultIndexStore = "../test/indexstore"
-	defaultFileStore  = "../test/filestore"
+	defaultIndexStore = "../testdata/indexstore"
+	defaultFileStore  = "../testdata/filestore"
 )
 
 func TestFS_NewFileName(t *testing.T) {
