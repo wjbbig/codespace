@@ -1,0 +1,10 @@
+syntax = "proto3";
+
+package proto;
+
+option go_package = "./;proto";
+
+message block {
+  string id = 1;
+  bytes payload = 2;
+}
