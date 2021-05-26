@@ -1,7 +1,8 @@
 package utils
 
-type ErrIndexNotFound struct{}
+import "github.com/pkg/errors"
 
-func (e *ErrIndexNotFound) Error() string {
-	return "index not found"
-}
+var (
+	ErrIndexNotFound       = errors.New("index not found")
+	ErrUnexpectedEndOfFile = errors.New("unexpected end of file")
+)

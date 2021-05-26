@@ -11,12 +11,18 @@ type IndexStore interface {
 	Open(string) error
 	SaveIndex(*BlockIndex) error
 	FetchIndex(string) (*BlockIndex, error)
+	SaveCheckpoint(*checkpoint) error
+	FetchCheckpoint() (*checkpoint, error)
 	Close() error
 }
 
+const (
+	checkpointKey = "checkpoint"
+)
+
 type BlockIndex struct {
 	// 文件的序号
-	FSeq uint64
+	FSeq int
 	// block的唯一Id
 	BlockId string
 	// 偏移量
@@ -52,7 +58,7 @@ func (i *indexStore) FetchIndex(id string) (*BlockIndex, error) {
 	}
 	indexBytes, err := i.db.Get([]byte(id), nil)
 	if err == leveldb.ErrNotFound {
-		return nil, &utils.ErrIndexNotFound{}
+		return nil, utils.ErrIndexNotFound
 	}
 	if err != nil {
 		return nil, errors.Wrap(err, "get index from store failed")
@@ -63,6 +69,28 @@ func (i *indexStore) FetchIndex(id string) (*BlockIndex, error) {
 		return nil, errors.Wrap(err, "unmarshal blockIndex failed")
 	}
 	return index, nil
+}
+
+func (i *indexStore) SaveCheckpoint(c *checkpoint) error {
+	cpBytes, err := c.marshal()
+	if err != nil {
+		return err
+	}
+	return i.db.Put([]byte(checkpointKey), cpBytes, nil)
+}
+
+func (i *indexStore) FetchCheckpoint() (*checkpoint, error) {
+	cpBytes, err := i.db.Get([]byte(checkpointKey), nil)
+	if err == leveldb.ErrNotFound {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, errors.Wrap(err, "fetch checkpoint from index store failed")
+	}
+
+	cp := &checkpoint{}
+	err = cp.unmarshal(cpBytes)
+	return cp, err
 }
 
 func (i indexStore) Close() error {
