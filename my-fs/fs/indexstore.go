@@ -19,8 +19,6 @@ type BlockIndex struct {
 	FSeq uint64
 	// block的唯一Id
 	BlockId string
-	// 数据长度
-	DataLen uint64
 	// 偏移量
 	Offset uint64
 }

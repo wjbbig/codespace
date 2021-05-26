@@ -4,7 +4,7 @@ package proto;
 
 option go_package = "./;proto";
 
-message block {
+message chunk {
   string id = 1;
   bytes payload = 2;
 }

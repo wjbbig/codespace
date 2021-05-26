@@ -18,7 +18,6 @@ func TestIndexStore(t *testing.T) {
 	blockIndex := &BlockIndex{
 		FSeq:    1,
 		BlockId: "zzyucsgt",
-		DataLen: 12,
 		Offset:  78,
 	}
 

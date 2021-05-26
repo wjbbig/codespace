@@ -93,19 +93,20 @@ func (fm *FileManager) Read(blockId string) ([]byte, error) {
 		return nil, errors.Wrap(err, "open file failed")
 	}
 	defer file.Close()
-	data := make([]byte, index.DataLen)
+	// TODO:修改
+	data := make([]byte, 10)
 	n, err := file.ReadAt(data, int64(index.Offset))
 	if err != nil {
 		return nil, errors.Wrap(err, "read data from file failed")
 	}
-	if n != int(index.DataLen) {
+	if n != int(10) {
 		return nil, errors.Wrap(err, "data length is not equal to index.datalen")
 	}
 	if index.BlockId != blockId {
 		return nil, fmt.Errorf("blockId is not equal to index, should be %s, but got %s", blockId, index.BlockId)
 	}
 
-	block := new(pb.Block)
+	block := new(pb.Chunk)
 	if err := proto.Unmarshal(data, block); err != nil {
 		return nil, errors.Wrap(err, "proto unmarshal block failed")
 	}
@@ -116,7 +117,7 @@ func (fm *FileManager) Read(blockId string) ([]byte, error) {
 func (fm *FileManager) Write(data []byte) (string, error) {
 	// 序列化数据
 	id := uuid.New().String()
-	block := &pb.Block{
+	block := &pb.Chunk{
 		Id:      id,
 		Payload: data,
 	}
@@ -144,7 +145,6 @@ func (fm *FileManager) Write(data []byte) (string, error) {
 	if err = fm.indexStore.SaveIndex(&BlockIndex{
 		FSeq:    fm.fSeq,
 		BlockId: id,
-		DataLen: uint64(len(data)),
 		Offset:  fm.offset,
 	}); err != nil {
 		fm.truncate(int64(fm.offset))
