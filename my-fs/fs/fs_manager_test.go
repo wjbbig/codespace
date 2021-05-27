@@ -6,13 +6,18 @@ import (
 )
 
 const (
-	testIndexStore = "../testdata/indexstore"
-	testFileStore  = "../testdata/filestore"
+	testIndexStore = "../test/fixture/indexstore"
+	testFileStore  = "../test/fixture/filestore"
 )
 
-func TestFS_NewFileName(t *testing.T) {
-	fs := &FileManager{}
-	t.Log(fs.newFileName())
+func TestFileManager_ScanForLastCompleteChunk(t *testing.T) {
+	_, _, nums, err := scanForLastCompleteChunk(testFileStore, 1, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if nums != 3 {
+		t.Fatal("num should be 3")
+	}
 }
 
 func TestFS_OpenFile(t *testing.T) {
@@ -59,7 +64,7 @@ func TestFileManager_Write(t *testing.T) {
 	}
 	t.Log(string(readBytes))
 
-	fs.truncate(int(fs.offset) - len(data))
+	fs.truncate(int(fs.checkpoint.lastFileSize) - len(data))
 
 	readBytes, err = fs.Read(id1)
 	if err != nil {

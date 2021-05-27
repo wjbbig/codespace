@@ -2,14 +2,14 @@ package fs
 
 import (
 	"fmt"
-	"github.com/google/uuid"
-	"github.com/pkg/errors"
-	"google.golang.org/protobuf/proto"
 	"log"
 	pb "my-fs/proto"
 	"my-fs/utils"
-	"os"
-	"path/filepath"
+	"sync"
+
+	"github.com/golang/protobuf/proto"
+	"github.com/google/uuid"
+	"github.com/pkg/errors"
 )
 
 const (
@@ -28,9 +28,8 @@ var _ FS = &FileManager{}
 type FileManager struct {
 	rootDir    string
 	checkpoint *checkpoint
+	mutx       sync.Mutex // 用于保护fileManager维护的cp
 	writer     *fileWriter
-	fSeq       int        // 文件的序号: file_000001
-	offset     uint64     // 当前文件的偏移量
 	indexStore IndexStore // 文件索引数据库
 }
 
@@ -49,7 +48,6 @@ func NewFileManager(fileStorePath string, indexStorePath string) (*FileManager, 
 		rootDir:    fileStorePath,
 		indexStore: indexStore,
 	}
-	// TODO 实现恢复功能
 	// 读取最后保存的checkpoint
 	cp, err := fs.loadCheckpoint()
 	if err != nil {
@@ -59,59 +57,32 @@ func NewFileManager(fileStorePath string, indexStorePath string) (*FileManager, 
 	if cp == nil {
 		log.Println("construct checkpoint from file storage")
 		if cp, err = constructCheckpointFromFiles(fileStorePath); err != nil {
-
+			return nil, err
 		}
 	} else {
 		// 否则读取
+		if err := syncCheckpointFromFS(fileStorePath, cp); err != nil {
+			return nil, err
+		}
 	}
 	// 保存checkpoint
-	err = fs.saveCheckpoint(cp)
+	err = fs.saveCheckpoint(cp, true)
 	if err != nil {
 		return nil, err
 	}
 	fs.checkpoint = cp
 	// 利用checkpoint中的数据生成writer
-
+	fWriter, err := newFileWriter(buildFilePath(fileStorePath, cp.lastFileSeq))
+	if err != nil {
+		return nil, err
+	}
+	fs.writer = fWriter
 	// 修剪不完整的数据
-
-	// 通过打开文件来初始化其余的值
-	if err := fs.openFile(); err != nil {
+	if err = fs.writer.truncate(cp.lastFileSize); err != nil {
 		return nil, err
 	}
+
 	return fs, nil
-}
-
-func constructCheckpointFromFiles(rootDir string) (*checkpoint, error) {
-	var offsetAfterLastChunk, chunkNums int64
-	lastFileSeq, err := retrieveLastFileSuffix(rootDir)
-	if err != nil {
-		return nil, err
-	}
-	// 文件夹中没有任何数据文件
-	if lastFileSeq == -1 {
-		checkpoint := &checkpoint{0, 0}
-		return checkpoint, nil
-	}
-
-	_, offsetAfterLastChunk, chunkNums, err = scanForLastCompleteChunk(rootDir, lastFileSeq, 0)
-	if err != nil {
-		return nil, err
-	}
-	// 最后一个文件中没有任何数据，需要读取倒数第二个文件
-	if chunkNums == 0 && lastFileSeq > 0 {
-		secondLastFileSeq := lastFileSeq - 1
-		_, offsetAfterLastChunk, chunkNums, err = scanForLastCompleteChunk(rootDir, secondLastFileSeq, 0)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	cp := &checkpoint{
-		lastFileSeq:  lastFileSeq,
-		lastFileSize: int(offsetAfterLastChunk),
-	}
-
-	return cp, nil
 }
 
 func scanForLastCompleteChunk(rootDir string, seq int, startOffset int64) ([]byte, int64, int64, error) {
@@ -138,23 +109,6 @@ func scanForLastCompleteChunk(rootDir string, seq int, startOffset int64) ([]byt
 	return lastChunkBytes, stream.currentOffset, chunkNums, err
 }
 
-// openFile 打开一个文件
-func (fm *FileManager) openFile() error {
-	fileName := filepath.Join(fm.rootDir, fm.newFileName())
-	_, err := os.OpenFile(fileName, os.O_APPEND|os.O_CREATE|os.O_RDWR, 0644)
-	if err != nil {
-		// 报错了，fSeq-1
-		fm.fSeq--
-		return errors.Wrapf(err, "open file failed, file name=%s", fileName)
-	}
-	// TODO:修复bug
-	fm.writer, err = newFileWriter(fileName)
-
-	// 打开了一个新的文件，偏移量置为0
-	fm.offset = 0
-	return nil
-}
-
 // loadCheckpoint 从索引数据库中获取保存的checkpoint
 func (fm *FileManager) loadCheckpoint() (*checkpoint, error) {
 	if fm.indexStore == nil {
@@ -164,17 +118,18 @@ func (fm *FileManager) loadCheckpoint() (*checkpoint, error) {
 }
 
 // saveCheckpoint 持久化checkpoint
-func (fm *FileManager) saveCheckpoint(cp *checkpoint) error {
+func (fm *FileManager) saveCheckpoint(cp *checkpoint, sync bool) error {
 	if fm.indexStore == nil {
 		return errors.New("index store is nil")
 	}
-	return fm.indexStore.SaveCheckpoint(cp)
+	return fm.indexStore.SaveCheckpoint(cp, sync)
 }
 
-// newFileName 构建一个新的文件名，名字格式为file_000001
-func (fm *FileManager) newFileName() string {
-	fm.fSeq++
-	return buildFileName(fm.fSeq)
+func (fm *FileManager) updateCheckpoint(cp *checkpoint) {
+	fm.mutx.Lock()
+	defer fm.mutx.Unlock()
+
+	fm.checkpoint = cp
 }
 
 func buildFileName(seq int) string {
@@ -191,31 +146,20 @@ func (fm *FileManager) Read(blockId string) ([]byte, error) {
 		return nil, err
 	}
 
-	fileName := filepath.Join(fm.rootDir, buildFileName(index.FSeq))
-	file, err := os.Open(fileName)
+	stream, err := newFileStream(fm.rootDir, index.FSeq, int64(index.Offset))
 	if err != nil {
-		return nil, errors.Wrap(err, "open file failed")
+		return nil, err
 	}
-	defer file.Close()
-	// TODO:修改
-	data := make([]byte, 10)
-	n, err := file.ReadAt(data, int64(index.Offset))
+	defer stream.close()
+	chunkBytes, err := stream.scanForNextChunk()
 	if err != nil {
-		return nil, errors.Wrap(err, "read data from file failed")
+		return nil, err
 	}
-	if n != int(10) {
-		return nil, errors.Wrap(err, "data length is not equal to index.datalen")
+	chunk := new(pb.Chunk)
+	if err := proto.Unmarshal(chunkBytes, chunk); err != nil {
+		return nil, errors.Wrap(err, "proto unmarshal chunk failed")
 	}
-	if index.BlockId != blockId {
-		return nil, fmt.Errorf("blockId is not equal to index, should be %s, but got %s", blockId, index.BlockId)
-	}
-
-	block := new(pb.Chunk)
-	if err := proto.Unmarshal(data, block); err != nil {
-		return nil, errors.Wrap(err, "proto unmarshal block failed")
-	}
-
-	return block.Payload, nil
+	return chunk.Payload, nil
 }
 
 func (fm *FileManager) Write(data []byte) (string, error) {
@@ -229,37 +173,72 @@ func (fm *FileManager) Write(data []byte) (string, error) {
 	if err != nil {
 		return "", errors.Wrap(err, "marshal block failed")
 	}
+	dataLen := len(data)
+	encodedDataLen := proto.EncodeVarint(uint64(dataLen))
+	totalLenToAppend := dataLen+len(encodedDataLen)
+	currentOffset := fm.checkpoint.lastFileSize
 	// 写入文件
 	// 判断文件是否已经超过最大大小
-	dataLen := len(data)
-	if int(fm.offset)+dataLen > maxFileSize {
+	if fm.checkpoint.lastFileSize + totalLenToAppend > maxFileSize {
 		// 超过大小，重新创建一个文件，并写入数据
-		if err := fm.moveToNextFile(); err != nil {
-			return "", errors.Wrap(err, "move to next file failed")
-		}
+		fm.moveToNextFile()
+		currentOffset = 0
 	}
 	// 没有超过，正常写入
-	err = fm.writer.write(data, true)
+	err = fm.writer.write(encodedDataLen, false)
+	if err == nil {
+		err = fm.writer.write(data, true)
+	}
 	if err != nil {
-		// 写入失败，需要销毁这段数据
-		fm.truncate(int(fm.offset))
+		// 出错了，修剪文件
+		err1 := fm.truncate(currentOffset)
+		if err1 != nil {
+			panic(fmt.Sprintf("truncate file failed, err=%s", err1))
+		}
 		return "", errors.Wrap(err, "write data into file failed")
 	}
+
+	// 更新checkpoint
+	newCP := &checkpoint{
+		lastFileSeq: fm.checkpoint.lastFileSeq,
+		lastFileSize: currentOffset + totalLenToAppend,
+	}
+	if err = fm.saveCheckpoint(newCP, false); err != nil {
+		err1 := fm.truncate(currentOffset)
+		if err1 != nil {
+			panic(fmt.Sprintf("truncate file failed, err=%s", err1))
+		}
+		return "", errors.Wrap(err, "save checkpoint failed")
+	}
+	
 	// 更新索引
 	if err = fm.indexStore.SaveIndex(&BlockIndex{
-		FSeq:    fm.fSeq,
+		FSeq:    fm.checkpoint.lastFileSeq,
 		BlockId: id,
-		Offset:  fm.offset,
-	}); err != nil {
-		fm.truncate(int(fm.offset))
+		Offset:  uint64(currentOffset),
+	}, true); err != nil {
 		return "", err
 	}
-	fm.offset += uint64(len(data))
+	fm.updateCheckpoint(newCP)
 	return id, nil
 }
 
-func (fm *FileManager) moveToNextFile() error {
-	return fm.openFile()
+func (fm *FileManager) moveToNextFile() {
+	// 更新checkpoint
+	newCheckpoint := &checkpoint{
+		lastFileSeq:  fm.checkpoint.lastFileSeq + 1,
+		lastFileSize: 0,
+	}
+	// 更新writer
+	nextWriter, err := newFileWriter(buildFilePath(fm.rootDir, newCheckpoint.lastFileSeq))
+	if err != nil {
+		panic(fmt.Sprintf("could not open writer for next file, err=%s", err))
+	}
+	fm.writer.close()
+	fm.writer = nextWriter
+	// 保存checkpoint
+	fm.saveCheckpoint(newCheckpoint, true)
+	fm.updateCheckpoint(newCheckpoint)
 }
 
 // truncate 清理损坏的数据

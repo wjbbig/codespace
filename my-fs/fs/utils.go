@@ -63,3 +63,15 @@ func retrieveLastFileSuffix(rootDir string) (int, error) {
 
 	return biggestFileSeq, nil
 }
+
+func fileExists(filePath string) (bool, int64, error) {
+	fileInfo, err := os.Stat(filePath)
+	if os.IsNotExist(err) {
+		return false, 0, nil
+	}
+	if err != nil {
+		return false, 0, errors.Wrap(err, "check file exist failed")
+	}
+
+	return true, fileInfo.Size(), nil
+}

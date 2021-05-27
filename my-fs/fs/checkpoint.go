@@ -11,6 +11,55 @@ type checkpoint struct {
 	lastFileSize int
 }
 
+func constructCheckpointFromFiles(rootDir string) (*checkpoint, error) {
+	var offsetAfterLastChunk, chunkNums int64
+	lastFileSeq, err := retrieveLastFileSuffix(rootDir)
+	if err != nil {
+		return nil, err
+	}
+	// 文件夹中没有任何数据文件
+	if lastFileSeq == -1 {
+		checkpoint := &checkpoint{1, 0}
+		return checkpoint, nil
+	}
+
+	_, offsetAfterLastChunk, chunkNums, err = scanForLastCompleteChunk(rootDir, lastFileSeq, 0)
+	if err != nil {
+		return nil, err
+	}
+	// 最后一个文件中没有任何数据，需要读取倒数第二个文件
+	if chunkNums == 0 && lastFileSeq > 1 {
+		secondLastFileSeq := lastFileSeq - 1
+		_, offsetAfterLastChunk, _, err = scanForLastCompleteChunk(rootDir, secondLastFileSeq, 0)
+		if err != nil {
+			return nil, err
+		}
+	}
+	cp := &checkpoint{
+		lastFileSeq:  lastFileSeq,
+		lastFileSize: int(offsetAfterLastChunk),
+	}
+	return cp, nil
+}
+
+// syncCheckpointFromFS 从已有的存储文件中，重新同步checkpoint
+func syncCheckpointFromFS(rootDir string, cp *checkpoint) error {
+	filePath := buildFilePath(rootDir, cp.lastFileSeq)
+	exists, size, err := fileExists(filePath)
+	if err != nil {
+		return err
+	}
+	if !exists || int(size) == cp.lastFileSize {
+		return nil
+	}
+	_, offsetAfterLastChunk, _, err := scanForLastCompleteChunk(rootDir, cp.lastFileSeq, int64(cp.lastFileSize))
+	if err != nil {
+		return err
+	}
+	cp.lastFileSize = int(offsetAfterLastChunk)
+	return nil
+}
+
 func (cp *checkpoint) marshal() ([]byte, error) {
 	buffer := proto.NewBuffer([]byte{})
 	if err := buffer.EncodeVarint(uint64(cp.lastFileSeq)); err != nil {
