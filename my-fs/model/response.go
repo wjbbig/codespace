@@ -12,3 +12,10 @@ func NewSuccessResp(data interface{}) Response {
 		Data: data,
 	}
 }
+
+func NewErrorResp(err string) Response {
+	return Response{
+		Code: 400,
+		Err:  err,
+	}
+}

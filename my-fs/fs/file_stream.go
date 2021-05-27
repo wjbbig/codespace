@@ -96,7 +96,7 @@ func (s *fileStream) nextChunkBytesAndPlacement() ([]byte, *chunkPlacement, erro
 		chunkStartOffset: s.currentOffset,
 		chunkBytesOffset: s.currentOffset + int64(n),
 	}
-	s.currentOffset = int64(n) + int64(chunkLen)
+	s.currentOffset += int64(n) + int64(chunkLen)
 	return chunkBytes, chunkPlacement, nil
 }
 

@@ -25,6 +25,8 @@ func TestFS_OpenFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer os.RemoveAll(testFileStore)
+	defer os.RemoveAll(testIndexStore)
 }
 
 func TestFileManager_Write(t *testing.T) {
@@ -64,7 +66,7 @@ func TestFileManager_Write(t *testing.T) {
 	}
 	t.Log(string(readBytes))
 
-	fs.truncate(int(fs.checkpoint.lastFileSize) - len(data))
+	fs.truncate(fs.checkpoint.lastFileSize - len(data))
 
 	readBytes, err = fs.Read(id1)
 	if err != nil {

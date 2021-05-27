@@ -12,6 +12,7 @@ import (
 )
 
 func TestFileStream_All(t *testing.T) {
+	CreateTestFileData(t)
 	stream, err := newFileStream(testFileStore, 1, 0)
 	if err != nil {
 		t.Fatal(err)
@@ -36,7 +37,7 @@ func TestFileStream_All(t *testing.T) {
 	}
 }
 
-func TestCreateTestFileData(t *testing.T) {
+func CreateTestFileData(t *testing.T) {
 	file, err := os.OpenFile(filepath.Join(testFileStore, "file_000001"), os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0755)
 	if err != nil {
 		t.Fatal(err)
@@ -54,4 +55,7 @@ func TestCreateTestFileData(t *testing.T) {
 	file.Write(data)
 	file.Write([]byte("uselessdata"))
 	file.Sync()
+
+	stat, _ := file.Stat()
+	t.Log(stat.Size())
 }
