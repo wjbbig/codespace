@@ -1,0 +1,13 @@
+version: '2'
+
+services:
+  myfs:
+    container_name: myfs
+    image: myfs:latest
+    restart: always
+    environment:
+      - FILE_STORE_PATH=/opt/filestore
+      - INDEX_STORE_PATH=/opt/indexstore
+    ports:
+      - 8080:8080
+    command: sh -c "/opt/myfs"
