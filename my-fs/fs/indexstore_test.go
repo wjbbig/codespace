@@ -21,7 +21,7 @@ func TestIndexStore(t *testing.T) {
 		Offset:  78,
 	}
 
-	err = indexStore.SaveIndex(blockIndex)
+	err = indexStore.SaveIndex(blockIndex, true)
 	if err != nil {
 		t.Fatal(err)
 	}

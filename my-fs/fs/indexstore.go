@@ -4,14 +4,15 @@ import (
 	"encoding/json"
 	"github.com/pkg/errors"
 	"github.com/syndtr/goleveldb/leveldb"
+	"github.com/syndtr/goleveldb/leveldb/opt"
 	"my-fs/utils"
 )
 
 type IndexStore interface {
 	Open(string) error
-	SaveIndex(*BlockIndex) error
+	SaveIndex(*BlockIndex, bool) error
 	FetchIndex(string) (*BlockIndex, error)
-	SaveCheckpoint(*checkpoint) error
+	SaveCheckpoint(*checkpoint, bool) error
 	FetchCheckpoint() (*checkpoint, error)
 	Close() error
 }
@@ -44,12 +45,16 @@ func (i *indexStore) Open(dbPath string) error {
 	return nil
 }
 
-func (i *indexStore) SaveIndex(index *BlockIndex) error {
+func (i *indexStore) SaveIndex(index *BlockIndex, sync bool) error {
 	indexBytes, err := json.Marshal(index)
 	if err != nil {
 		return errors.Wrap(err, "save block index failed")
 	}
-	return i.db.Put([]byte(index.BlockId), indexBytes, nil)
+	opts := &opt.WriteOptions{}
+	if sync {
+		opts.Sync = true
+	}
+	return i.db.Put([]byte(index.BlockId), indexBytes, opts)
 }
 
 func (i *indexStore) FetchIndex(id string) (*BlockIndex, error) {
@@ -71,12 +76,16 @@ func (i *indexStore) FetchIndex(id string) (*BlockIndex, error) {
 	return index, nil
 }
 
-func (i *indexStore) SaveCheckpoint(c *checkpoint) error {
+func (i *indexStore) SaveCheckpoint(c *checkpoint, sync bool) error {
 	cpBytes, err := c.marshal()
 	if err != nil {
 		return err
 	}
-	return i.db.Put([]byte(checkpointKey), cpBytes, nil)
+	opts := &opt.WriteOptions{}
+	if sync {
+		opts.Sync = true
+	}
+	return i.db.Put([]byte(checkpointKey), cpBytes, opts)
 }
 
 func (i *indexStore) FetchCheckpoint() (*checkpoint, error) {
