@@ -1,13 +1,13 @@
 package random
 
 import (
-	"load-balance/iloadbalance"
+	"load-balance/model"
 	"math/rand"
 )
 
 type LoadBalance struct{}
 
-func (l LoadBalance) Select(instances []*iloadbalance.ServerInstance) *iloadbalance.ServerInstance {
+func (l LoadBalance) Select(instances []*model.ServerInstance) *model.ServerInstance {
 	if len(instances) == 0 {
 		return nil
 	}
