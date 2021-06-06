@@ -13,8 +13,8 @@ type ServerInstance struct {
 	proxy *httputil.ReverseProxy
 }
 
-func NewServerInstance(urlStr string) (*ServerInstance, error) {
-	target, err := url.Parse(urlStr)
+func NewServerInstance(address string) (*ServerInstance, error) {
+	target, err := url.Parse(address)
 	if err != nil {
 		return nil, err
 	}
