@@ -1,12 +1,25 @@
 package roundrobin
 
-import "load-balance/model"
+import (
+	"load-balance/model"
+	"sync/atomic"
+)
 
 type LoadBalance struct {
-	serverPool []*model.ServerInstance
-	index      uint64
+	serverPool   []*model.ServerInstance
+	currentIndex uint64
 }
 
 func New(instances []*model.ServerInstance) *LoadBalance {
-	return nil
+
+	lb := &LoadBalance{
+		serverPool: instances,
+	}
+	atomic.StoreUint64(&lb.currentIndex, 0)
+	return lb
+}
+
+func (rr *LoadBalance) Select() *model.ServerInstance {
+	index := int(atomic.AddUint64(&rr.currentIndex, 1)) % len(rr.serverPool)
+	return rr.serverPool[index]
 }

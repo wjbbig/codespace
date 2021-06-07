@@ -10,7 +10,7 @@ type ServerInstance struct {
 	URL   *url.URL
 	mutx  sync.RWMutex
 	alive bool
-	proxy *httputil.ReverseProxy
+	Proxy *httputil.ReverseProxy
 }
 
 func NewServerInstance(address string) (*ServerInstance, error) {
@@ -23,7 +23,7 @@ func NewServerInstance(address string) (*ServerInstance, error) {
 	return &ServerInstance{
 		URL:   target,
 		alive: true,
-		proxy: proxy,
+		Proxy: proxy,
 	}, nil
 }
 
